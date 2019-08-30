@@ -1,0 +1,5 @@
+{
+    "repos":[
+        {"name": "python3.7", "deb": "deb http://ppa.launchpad.net/deadsnakes/ppa/ubuntu bionic main"}
+    ]
+}
