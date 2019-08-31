@@ -3,5 +3,5 @@ app = Flask(__name__)
 
 @app.route('/ubuntu/<path:path>')
 def static_files(path):
-    return send_from_directory('repo', path)
+    return send_from_directory('../repo', path)
     

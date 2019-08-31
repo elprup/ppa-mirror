@@ -1,3 +1,4 @@
 requests
 backports.lzma
 flask
+packaging

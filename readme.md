@@ -34,3 +34,6 @@ With help of `ansible`, now you can easily install software in local network.
 
 MIT
 
+## proxy list
+
+https://proxy.coderbusy.com/

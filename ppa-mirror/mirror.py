@@ -7,8 +7,9 @@ import base64
 import pprint
 import os
 import hashlib
-from config import cache_root, mirror_root
+from config import cache_root, mirror_root, http_proxy
 from backports import lzma
+from packaging import version
 
 class httpClient():
     @classmethod
@@ -22,7 +23,10 @@ class httpClient():
                 return content
         except:
             pass
-        response = requests.get(url)
+        proxy_dict = {}
+        if http_proxy != '':
+            proxy_dict['http'] = 'http://' + http_proxy
+        response = requests.get(url, proxies=proxy_dict)
         content = response.content
         try:
             print(cache_root+cache_name)
@@ -37,21 +41,36 @@ class DebSource():
     def __init__(self, source):
         # parse source url
         token = source.split(' ')
-        self.deb, self.uri, self.distribution = token[0], token[1], token[2]
-        self.components = token[3:]
-        self.arch = 'amd64'
+        self.is_multi_deb = False
+        if len(token) >= 4:
+            self.deb, self.uri, self.distribution = token[0], token[1], token[2]
+            self.components = token[3:]
+            self.arch = 'amd64'
+        else:
+            self.is_multi_deb = True
+            self.deb, self.uri, self.components = token[0], token[1], [token[2]]
+            self.arch = ''
 
     def init_index(self):
-        self.index_path = '/'.join(['dists', self.distribution,
-                                    self.components[0], 'binary-'+self.arch])
-        url = '/'.join([self.uri, 'dists', self.distribution,
-                        self.components[0], 'binary-'+self.arch, 'Packages.xz'])
+        if self.is_multi_deb:
+            self.index_path = '/'.join([self.components[0]])
+            url = '/'.join([self.uri, self.components[0], 'Packages.xz'])
+        else:
+            self.index_path = '/'.join(['dists', self.distribution,
+                                        self.components[0], 'binary-'+self.arch])
+            url = '/'.join([self.uri, 'dists', self.distribution,
+                            self.components[0], 'binary-'+self.arch, 'Packages.xz'])
         content = httpClient.get(url)
         index_data = lzma.decompress(content)
         self.index_list = self.parse_package_file(index_data)
         self.index = {}
         for entry in self.index_list:
-            self.index[entry.get('Package')] = entry
+            if self.index.get(entry.get('Package')) is None:
+                self.index[entry.get('Package')] = []
+            self.index[entry.get('Package')].append(entry)
+        # sort package with same name with version lastest -> oldest
+        for key in self.index:
+            self.index[key] = sorted(self.index[key], cmp=lambda l,r: -1 if version.parse(l.get('Version', '0.0')) >= version.parse(r.get('Version', '0.0')) else 0)
 
     def _clone(self, obj):
         return json.loads(json.dumps(obj))
@@ -70,8 +89,13 @@ class DebSource():
             block[key] = value
         return result
 
-    def get_package_info(self, package):
-        return self.index.get(package)
+    def get_package_info(self, package, version=None):
+        if version is None:
+            return self.index.get(package)[0]
+        for pkg in self.index.get(package):
+            if pkg['Version'] == version:
+                return pkg
+        return None
 
     def get_index_path(self):
         return self.index_path
@@ -201,12 +225,15 @@ def sync(package, source):
             pass
         if size == download_map[key]['size']:
             continue
-        command = 'wget ' + download_map[key]['url'] + ' -O ' + bin_full_path
+        if http_proxy == "":
+            command = 'wget '+ download_map[key]['url'] + ' -O ' + bin_full_path
+        else:
+            command = 'wget -e use_proxy=yes -e http_proxy=' + http_proxy + ' ' + download_map[key]['url'] + ' -O ' + bin_full_path
         print(command)
         os.system(command)
 
 
 if __name__ == '__main__':
     d = load_json_config('ppa-mirror/config.json')
-    source = update_source(d['repos'][0]['deb'])
-    sync(d['repos'][0]['name'], source)
+    source = update_source(d['repos'][1]['deb'])
+    sync(d['repos'][1]['name'], source)
